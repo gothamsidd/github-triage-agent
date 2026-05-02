@@ -329,4 +329,5 @@ if __name__ == "__main__":
     _original_print(f"    GitHub : {'Real API  — ' + 'comments/labels WILL be posted' if GITHUB_TOKEN else 'Mock mode — nothing will be posted'}")
     _original_print(f"    LLM    : {'OpenAI GPT-4o-mini' if USE_LANGCHAIN else 'Keyword heuristics (no OPENAI_API_KEY)'}")
     _original_print(f"    Open   : http://localhost:8080\n")
-    app.run(debug=False, threaded=True, port=8080)
+    port = int(os.getenv("PORT", 8080))
+    app.run(debug=False, threaded=True, host="0.0.0.0", port=port)
