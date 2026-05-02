@@ -1,0 +1,28 @@
+# Web server
+flask>=3.0.0
+
+# Core
+PyGithub>=2.1.1
+scikit-learn>=1.3.0
+numpy>=1.24.0
+
+# Semantic duplicate detection (optional — falls back to TF-IDF without these)
+faiss-cpu>=1.7.4
+
+# Embedding providers (use one — Voyage AI is free, OpenAI is paid)
+voyageai>=0.2.3       # free 200M tokens/month — recommended
+openai>=1.30.0        # paid — also used as fallback
+
+# LLM / Agent (use one — Groq is free, OpenAI is paid)
+groq>=0.9.0           # free 14k requests/day — recommended
+langchain-groq>=0.1.9 # LangChain wrapper for Groq agent
+langchain>=0.2.0
+langchain-openai>=0.1.8
+langchain-core>=0.2.0
+langgraph>=0.1.0
+
+# Observability (optional — set LANGCHAIN_TRACING_V2=true to enable)
+langsmith>=0.1.0
+
+# Utilities
+python-dotenv>=1.0.0

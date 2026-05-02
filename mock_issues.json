@@ -1,0 +1,37 @@
+[
+  {
+    "issue_number": 1001,
+    "title": "Login fails with OAuth tokens on mobile devices",
+    "body": "When using OAuth tokens on mobile devices, the login endpoint returns a 500 Internal Server Error.\n\nSteps to reproduce:\n1. Configure an OAuth 2.0 provider (tested with Google and GitHub)\n2. Call the /auth/login endpoint with the OAuth access_token\n3. Observe: HTTP 500 - Internal Server Error\n\nTraceback (most recent call last):\n  File \"src/auth/login.py\", line 142, in authenticate\n    token_data = session.get_oauth_token(request.headers[\"Authorization\"])\n  KeyError: 'access_token'\n\nEnvironment:\n- Python 3.10.4\n- Ubuntu 22.04\n- Library version: 2.3.1\n- Tested via iOS API client and curl",
+    "created_at": "2024-01-15T10:30:00Z",
+    "author": "mobile_dev_user"
+  },
+  {
+    "issue_number": 1002,
+    "title": "App crashes when I use it",
+    "body": "The app just crashes. Please fix it.",
+    "created_at": "2024-01-15T11:00:00Z",
+    "author": "vague_reporter"
+  },
+  {
+    "issue_number": 1003,
+    "title": "CRITICAL: Silent data loss when uploading files larger than 100MB",
+    "body": "This is a critical production bug causing data loss for enterprise customers.\n\nWhen uploading files larger than 100MB through the API, the data gets silently truncated without any error message or warning. Users believe their data was saved successfully but it is actually corrupted.\n\nSteps to reproduce:\n1. Create a test file of 150MB\n2. Upload via POST /api/v2/storage/upload\n3. Download the file back\n4. Compare checksums: they will not match\n\nTraceback:\n  File \"src/storage/upload.py\", line 89, in chunk_upload\n    buffer = allocate_buffer(file_size)\n  MemoryError: Unable to allocate buffer for file size 157286400\n\nThis is happening in production right now. Thousands of customers are affected.\n\nEnvironment:\n- Python 3.11.0\n- Ubuntu 22.04 LTS\n- Library version: 2.3.1\n- Server: AWS EC2 t3.medium (4GB RAM)",
+    "created_at": "2024-01-15T12:00:00Z",
+    "author": "enterprise_admin"
+  },
+  {
+    "issue_number": 1004,
+    "title": "Feature request: Add dark mode support to the dashboard UI",
+    "body": "It would be wonderful to have a dark mode option in the dashboard UI. Many developers prefer dark mode for long coding sessions, and it would significantly improve accessibility for users with certain visual sensitivities.\n\nSuggested implementation: Use CSS custom properties (variables) for all color values so themes can be swapped at runtime. Many popular projects like VS Code and GitHub itself have implemented this successfully.\n\nI'd be happy to contribute a PR if the maintainers agree this is worth adding. Could you add a toggle button in the user settings panel?",
+    "created_at": "2024-01-15T13:00:00Z",
+    "author": "ui_enthusiast"
+  },
+  {
+    "issue_number": 1005,
+    "title": "Typo in README: 'recieve' should be 'receive'",
+    "body": "Minor documentation fix needed. In the README.md file, the word 'recieve' is misspelled. It should be 'receive'. I believe it appears in the Contributing section near the top of the file. Worth fixing to maintain professionalism in the docs.",
+    "created_at": "2024-01-15T14:00:00Z",
+    "author": "grammar_police"
+  }
+]

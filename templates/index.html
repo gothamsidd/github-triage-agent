@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GitHub Issue Triage Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --blue:      #58a6ff;
+      --green:     #3fb950;
+      --yellow:    #d29922;
+      --orange:    #ffa657;
+      --red:       #ff7b72;
+      --purple:    #d2a8ff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-shrink: 0;
+    }
+
+    .logo { font-size: 20px; line-height: 1; }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .repo-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      width: 200px;
+      transition: border-color .15s;
+    }
+    .repo-input:focus { outline: none; border-color: var(--blue); }
+
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      transition: opacity .15s, background .15s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary  { background: #238636; color: #fff; border-color: #2ea043; }
+    .btn-primary:not(:disabled):hover  { background: #2ea043; }
+    .btn-default  { background: #21262d; color: var(--text); border-color: var(--border); }
+    .btn-default:not(:disabled):hover  { background: var(--border); }
+    .btn-danger   { background: #6e2020; color: #fff; border-color: #da3633; }
+    .btn-danger:not(:disabled):hover   { background: #da3633; }
+    .btn-sm { padding: 3px 10px; font-size: 12px; }
+
+    .divider { width: 1px; height: 22px; background: var(--border); }
+
+    .dry-label {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      cursor: pointer;
+      user-select: none;
+    }
+    .dry-label input { cursor: pointer; accent-color: var(--blue); }
+
+    .mode-pills { display: flex; gap: 6px; }
+    .pill {
+      padding: 2px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .4px;
+      border: 1px solid;
+    }
+    .pill-blue   { background: #0c2d6b; color: var(--blue);   border-color: #1f6feb; }
+    .pill-green  { background: #1a4f2a; color: var(--green);  border-color: #2ea043; }
+    .pill-yellow { background: #3d2b00; color: var(--yellow); border-color: #bb8009; }
+    .pill-gray   { background: #21262d; color: var(--muted);  border-color: var(--border); }
+
+    /* ── Body layout ─────────────────────────────────────────────── */
+    .body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Issues panel ────────────────────────────────────────────── */
+    .issues-pane {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    .pane-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .pane-title { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+    }
+    .empty .icon { font-size: 44px; margin-bottom: 12px; }
+    .empty p { font-size: 14px; }
+
+    /* ── Issue card ──────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .card:hover    { border-color: #484f58; }
+    .card.active   { border-color: var(--yellow); box-shadow: 0 0 0 3px rgba(210,153,34,.12); }
+    .card.done     { border-color: var(--green);  box-shadow: 0 0 0 3px rgba(63,185,80,.10); }
+    .card.dup      { border-color: var(--muted);  opacity: .75; }
+
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .issue-num { font-size: 11px; color: var(--muted); font-family: monospace; }
+
+    .sev-badge {
+      padding: 1px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      border: 1px solid;
+      display: none;
+    }
+    .sev-critical { background: #4b1113; color: var(--red);    border-color: #da3633; }
+    .sev-high     { background: #3d1a00; color: var(--orange); border-color: #d1742f; }
+    .sev-medium   { background: #3d2b00; color: var(--yellow); border-color: #bb8009; }
+    .sev-low      { background: #1a4f2a; color: var(--green);  border-color: #2ea043; }
+    .sev-duplicate{ background: #21262d; color: var(--muted);  border-color: var(--border); }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.45;
+    }
+    .card-meta { font-size: 11px; color: var(--muted); }
+    .card-body {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 2px;
+    }
+    .card-status { font-size: 11px; color: var(--muted); }
+
+    /* ── Log panel ───────────────────────────────────────────────── */
+    .log-pane {
+      width: 400px;
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .log-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .log-title {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-idle    { background: #484f58; }
+    .dot-running { background: var(--yellow); animation: pulse 1.2s infinite; }
+    .dot-done    { background: var(--green); }
+    .dot-error   { background: var(--red); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+
+    .log-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+
+    .ll { word-break: break-word; white-space: pre-wrap; }
+    .ll-step  { color: var(--blue); font-weight: 600; }
+    .ll-ok    { color: var(--green); }
+    .ll-warn  { color: var(--yellow); }
+    .ll-err   { color: var(--red); }
+    .ll-sep   { color: #2d333b; }
+    .ll-muted { color: var(--muted); }
+    .ll-box {
+      background: #1c2128;
+      border-left: 2px solid var(--blue);
+      padding: 8px 10px;
+      margin: 6px 0;
+      border-radius: 0 4px 4px 0;
+      font-family: -apple-system, sans-serif;
+      font-size: 12px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    .ll-box strong { color: var(--blue); }
+
+    .log-empty {
+      color: #3d444d;
+      text-align: center;
+      margin-top: 50px;
+      font-style: italic;
+    }
+
+    /* ── Spinner ─────────────────────────────────────────────────── */
+    .spin {
+      display: inline-block;
+      width: 11px; height: 11px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Pending approvals panel ─────────────────────────────────── */
+    .pending-pane {
+      width: 380px;
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .pending-head {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .pending-title {
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .pending-badge {
+      background: #3d2b00;
+      color: var(--yellow);
+      border: 1px solid #bb8009;
+      border-radius: 20px;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 7px;
+    }
+    .pending-body { flex: 1; overflow-y: auto; padding: 12px; }
+    .pending-empty { color: #3d444d; text-align: center; margin-top: 40px; font-size: 12px; font-style: italic; }
+
+    .approval-card {
+      background: #1c2128;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .approval-card-head { font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--yellow); }
+    .approval-preview {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.55;
+      max-height: 120px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      font-family: "SF Mono", monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .approval-edit {
+      width: 100%;
+      font-size: 11px;
+      font-family: "SF Mono", monospace;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--blue);
+      border-radius: 4px;
+      padding: 6px 8px;
+      margin-bottom: 8px;
+      resize: vertical;
+      min-height: 80px;
+      display: none;
+    }
+    .approval-labels { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .approval-actions { display: flex; gap: 6px; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<header>
+  <span class="logo">🤖</span>
+  <h1>Triage Agent</h1>
+
+  <div class="controls">
+    <input class="repo-input" id="repoInput" value="{{ default_repo }}"
+           placeholder="owner/repo or full GitHub URL"
+           style="width:280px"
+           oninput="parseInput(this.value)" />
+    <input class="repo-input" id="issueInput" placeholder="#issue (optional)"
+           style="width:130px" type="number" min="1" />
+    <button class="btn btn-default" onclick="fetchIssues()">Fetch Issues</button>
+    <button class="btn btn-primary" id="triageAllBtn" onclick="triageAll()" disabled>Triage All</button>
+    <div class="divider"></div>
+    <label class="dry-label">
+      <input type="checkbox" id="dryRun" checked />
+      Dry run
+    </label>
+    <label class="dry-label" title="Stage reports for human review before posting to GitHub">
+      <input type="checkbox" id="stageMode" />
+      Stage for review
+    </label>
+  </div>
+
+  <div class="mode-pills">
+    <span class="pill {{ 'pill-green' if 'Real' in github_mode else 'pill-gray' }}">
+      {{ 'Real GitHub' if 'Real' in github_mode else 'Mock' }}
+    </span>
+    <span class="pill {{ 'pill-blue' if 'OpenAI' in llm_mode else 'pill-yellow' }}">
+      {{ 'GPT-4o-mini' if 'OpenAI' in llm_mode else 'Heuristics' }}
+    </span>
+  </div>
+</header>
+
+<!-- ── Body ───────────────────────────────────────────────────────────── -->
+<div class="body">
+
+  <!-- Issues panel -->
+  <div class="issues-pane">
+    <div class="pane-header">
+      <span class="pane-title" id="paneTitle">Ready</span>
+    </div>
+    <div class="grid" id="grid">
+      <div class="empty">
+        <div class="icon">🔍</div>
+        <p>Click <strong>Fetch Issues</strong> to load issues from the repo.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log panel -->
+  <div class="log-pane">
+    <div class="log-head">
+      <div class="log-title">
+        <span class="dot dot-idle" id="dot"></span>
+        Live Log
+      </div>
+      <button class="btn btn-default btn-sm" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="log-body" id="logBody">
+      <div class="log-empty">No activity yet.</div>
+    </div>
+  </div>
+
+  <!-- Pending approvals panel -->
+  <div class="pending-pane" id="pendingPane" style="display:none">
+    <div class="pending-head">
+      <div class="pending-title">
+        ⏳ Pending Approval
+        <span class="pending-badge" id="pendingCount">0</span>
+      </div>
+      <button class="btn btn-default btn-sm" onclick="refreshPending()">Refresh</button>
+    </div>
+    <div class="pending-body" id="pendingBody">
+      <div class="pending-empty">No reports awaiting approval.</div>
+    </div>
+  </div>
+
+</div><!-- body -->
+
+<script>
+  let currentRepo = '{{ default_repo }}';
+  let loadedIssues = [];
+  let activeSource = null;
+
+  /* ── Helpers ───────────────────────────────────────────────────── */
+  const $  = id => document.getElementById(id);
+  const esc = s => (s||'').replace(/[<>&"]/g, c =>
+    ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+  function repo()      { return $('repoInput').value.trim() || '{{ default_repo }}'; }
+  function dryRun()    { return $('dryRun').checked; }
+  function stageMode() { return $('stageMode').checked; }
+  function setDot(state) { $('dot').className = `dot dot-${state}`; }
+
+  // Show/hide the pending panel based on stage mode toggle.
+  $('stageMode').addEventListener('change', () => {
+    $('pendingPane').style.display = stageMode() ? '' : 'none';
+    if (stageMode()) refreshPending();
+  });
+
+  /* ── Parse a full GitHub URL or plain owner/repo into the inputs ─ */
+  function parseInput(val) {
+    // Matches: https://github.com/prisma/prisma/issues/29517
+    const urlMatch = val.match(/github\.com\/([^/]+\/[^/]+?)(?:\/issues\/(\d+))?(?:\/|$|\?)/);
+    if (urlMatch) {
+      $('repoInput').value  = urlMatch[1];
+      if (urlMatch[2]) $('issueInput').value = urlMatch[2];
+    }
+  }
+
+  /* ── Fetch issues ──────────────────────────────────────────────── */
+  async function fetchIssues() {
+    // If user pasted a full URL, extract the parts first
+    parseInput($('repoInput').value);
+
+    currentRepo = repo();
+    const issueNum = $('issueInput').value.trim();
+
+    $('grid').innerHTML = `<div class="empty"><div class="spin"></div><p style="margin-top:14px">Fetching from <strong>${esc(currentRepo)}</strong>…</p></div>`;
+    $('triageAllBtn').disabled = true;
+    $('paneTitle').textContent = 'Loading…';
+
+    try {
+      let url = `/api/issues?repo=${encodeURIComponent(currentRepo)}`;
+      if (issueNum) url += `&issue_number=${issueNum}`;
+
+      const res  = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) throw new Error(data.error);
+      if (!Array.isArray(data) || data.length === 0) {
+        $('grid').innerHTML = `<div class="empty"><div class="icon">✅</div><p>No triageable issues found in <strong>${esc(currentRepo)}</strong>.</p></div>`;
+        $('paneTitle').textContent = 'No issues found';
+        return;
+      }
+
+      loadedIssues = data;
+      const subtitle = issueNum ? `Issue #${issueNum}` : `${data.length} issue${data.length > 1 ? 's' : ''}`;
+      $('paneTitle').textContent = `${subtitle} · ${esc(currentRepo)}`;
+      $('grid').innerHTML = data.map(buildCard).join('');
+      $('triageAllBtn').disabled = false;
+    } catch (e) {
+      $('grid').innerHTML = `<div class="empty"><div class="icon">❌</div><p>${esc(e.message)}</p></div>`;
+      $('paneTitle').textContent = 'Error';
+    }
+  }
+
+  /* ── Card builder ──────────────────────────────────────────────── */
+  function buildCard(issue) {
+    const preview = (issue.body || 'No description.').slice(0, 180);
+    const date    = new Date(issue.created_at).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+    return `
+      <div class="card" id="card-${issue.issue_number}">
+        <div class="card-top">
+          <span class="issue-num">#${issue.issue_number}</span>
+          <span class="sev-badge" id="sev-${issue.issue_number}"></span>
+        </div>
+        <div class="card-title">${esc(issue.title)}</div>
+        <div class="card-meta">by <strong>${esc(issue.author)}</strong> · ${date}${
+          issue.labels && issue.labels.length
+            ? ' · <span style="color:var(--yellow)">⚑ ' + issue.labels.map(esc).join(', ') + '</span>'
+            : ' · <span style="color:var(--muted)">unlabelled</span>'
+        }</div>
+        <div class="card-body">${esc(preview)}${issue.body && issue.body.length > 180 ? '…' : ''}</div>
+        <div class="card-foot">
+          <button class="btn btn-default btn-sm" id="btn-${issue.issue_number}"
+                  onclick="triageOne(${issue.issue_number})">Triage</button>
+          <span class="card-status" id="st-${issue.issue_number}"></span>
+        </div>
+      </div>`;
+  }
+
+  /* ── Triage one ────────────────────────────────────────────────── */
+  function triageOne(num) {
+    if (activeSource) activeSource.close();
+
+    const card = $(`card-${num}`);
+    const btn  = $(`btn-${num}`);
+    const st   = $(`st-${num}`);
+
+    card.className = 'card active';
+    btn.disabled   = true;
+    st.textContent = '';
+
+    logStart(`Triaging #${num} — ${esc(loadedIssues.find(i=>i.issue_number===num)?.title||'')}` );
+
+    const url = `/api/triage/stream/${num}?repo=${encodeURIComponent(currentRepo)}&dry_run=${dryRun()}&stage_mode=${stageMode()}`;
+    const src  = new EventSource(url);
+    activeSource = src;
+
+    src.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'done') {
+        src.close();
+        btn.disabled = false;
+        st.textContent = '✅ Done';
+        card.className = 'card done';
+        setDot('done');
+        logLine('✅  Triage complete.', 'll-ok');
+      } else if (msg.type === 'staged') {
+        logLine(`⏳ Report staged for approval — #${msg.issue_number}`, 'll-warn');
+        refreshPending();
+      } else {
+        logLine(msg.text);
+        parseSev(msg.text, num);
+      }
+    };
+    src.onerror = () => {
+      src.close();
+      btn.disabled = false;
+      st.textContent = '❌ Error';
+      setDot('error');
+      logLine('Connection lost.', 'll-err');
+    };
+  }
+
+  /* ── Triage all ────────────────────────────────────────────────── */
+  function triageAll() {
+    if (activeSource) activeSource.close();
+    $('triageAllBtn').disabled = true;
+
+    logStart(`Triaging all ${loadedIssues.length} issues in ${currentRepo}…`);
+
+    // Reset all cards
+    loadedIssues.forEach(i => {
+      const card = $(`card-${i.issue_number}`);
+      if (card) card.className = 'card';
+    });
+
+    const url = `/api/triage/all?repo=${encodeURIComponent(currentRepo)}&dry_run=${dryRun()}&stage_mode=${stageMode()}`;
+    const src  = new EventSource(url);
+    activeSource = src;
+
+    src.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'done') {
+        src.close();
+        $('triageAllBtn').disabled = false;
+        setDot('done');
+        logLine('✅  All issues triaged.', 'll-ok');
+        if (stageMode()) refreshPending();
+      } else if (msg.type === 'staged') {
+        logLine(`⏳ Report staged for approval — #${msg.issue_number}`, 'll-warn');
+      } else {
+        logLine(msg.text);
+        loadedIssues.forEach(i => parseSev(msg.text, i.issue_number));
+        parseCardDone(msg.text);
+      }
+    };
+    src.onerror = () => {
+      src.close();
+      $('triageAllBtn').disabled = false;
+      setDot('error');
+      logLine('Connection lost.', 'll-err');
+    };
+  }
+
+  /* ── Parse helpers ─────────────────────────────────────────────── */
+  // Detect severity from "🎯 Severity: HIGH — …" lines and update the card badge.
+  function parseSev(text, num) {
+    const m = text.match(/Severity[:\s]+([A-Z]+)/i);
+    if (!m) return;
+    const sev = m[1].toLowerCase();
+
+    const badge = $(`sev-${num}`);
+    if (!badge) return;
+    badge.style.display = '';
+    badge.textContent   = sev.toUpperCase();
+    badge.className     = `sev-badge sev-${sev}`;
+
+    // Mark card as duplicate if severity came from duplicate path
+    if (sev === 'duplicate') {
+      const card = $(`card-${num}`);
+      if (card) card.className = 'card dup';
+    }
+  }
+
+  // Mark a card as done when "✅  Triage complete for issue #N" appears.
+  function parseCardDone(text) {
+    const m = text.match(/Triage complete for issue #(\d+)/);
+    if (!m) return;
+    const num  = parseInt(m[1]);
+    const card = $(`card-${num}`);
+    const btn  = $(`btn-${num}`);
+    const st   = $(`st-${num}`);
+    if (card) card.className = 'card done';
+    if (btn)  btn.disabled   = false;
+    if (st)   st.textContent  = '✅ Done';
+  }
+
+  /* ── Log rendering ─────────────────────────────────────────────── */
+  function logStart(label) {
+    const body = $('logBody');
+    body.innerHTML = '';
+    setDot('running');
+    logLine('─'.repeat(44), 'll-sep');
+    logLine(label, 'll-step');
+    logLine('─'.repeat(44), 'll-sep');
+  }
+
+  const SEV_COLORS = {critical:'var(--red)',high:'var(--orange)',medium:'var(--yellow)',low:'var(--green)'};
+
+  function logLine(text, forceCls) {
+    const body = $('logBody');
+    const div  = document.createElement('div');
+
+    const cls = forceCls || classifyLine(text);
+
+    // Render the triage comment block with nicer formatting
+    if (cls === 'll-box') {
+      div.className = 'll ll-box';
+      // Bold the **key**: part
+      div.innerHTML = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    } else {
+      div.className = `ll ${cls}`;
+      div.textContent = text;
+    }
+
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function classifyLine(t) {
+    if (/^\[1\/|^\[2\/|^\[3\/|^\[4\/|^\[5\//.test(t)) return 'll-step';
+    if (t.includes('✅'))                               return 'll-ok';
+    if (t.includes('⚠') || t.includes('[WARN]'))        return 'll-warn';
+    if (t.includes('❌') || /error/i.test(t))           return 'll-err';
+    if (/^[=─]{5,}/.test(t))                            return 'll-sep';
+    if (t.includes('[MOCK]') || t.includes('[DRY-RUN]')) return 'll-muted';
+    if (t.startsWith('**') || t.startsWith('##') || t.includes('**Severity'))
+                                                        return 'll-box';
+    return '';
+  }
+
+  function clearLog() {
+    $('logBody').innerHTML = '<div class="log-empty">No activity yet.</div>';
+    setDot('idle');
+  }
+
+  /* ── Pending Approvals ─────────────────────────────────────────── */
+  async function refreshPending() {
+    try {
+      const res   = await fetch('/api/pending');
+      const items = await res.json();
+      $('pendingCount').textContent = items.length;
+
+      const body = $('pendingBody');
+      if (items.length === 0) {
+        body.innerHTML = '<div class="pending-empty">No reports awaiting approval.</div>';
+        return;
+      }
+
+      body.innerHTML = items.map(item => `
+        <div class="approval-card" id="ac-${item.issue_number}">
+          <div class="approval-card-head">
+            #${item.issue_number} · ${esc(currentRepo)}
+          </div>
+          <div class="approval-preview" id="preview-${item.issue_number}">${esc(item.comment_preview)}</div>
+          <textarea class="approval-edit" id="edit-${item.issue_number}">${esc(item.comment_preview)}</textarea>
+          <div class="approval-labels">Labels: ${item.suggested_labels.map(l => `<code>${esc(l)}</code>`).join(' ')}</div>
+          <div class="approval-actions">
+            <button class="btn btn-default btn-sm" onclick="toggleEdit(${item.issue_number})">Edit</button>
+            <button class="btn btn-primary btn-sm" onclick="approveReport(${item.issue_number})">Approve & Post</button>
+            <button class="btn btn-danger btn-sm" onclick="rejectReport(${item.issue_number})">Discard</button>
+          </div>
+        </div>`).join('');
+    } catch (e) {
+      $('pendingBody').innerHTML = `<div class="pending-empty">Error: ${esc(e.message)}</div>`;
+    }
+  }
+
+  function toggleEdit(num) {
+    const preview = $(`preview-${num}`);
+    const editor  = $(`edit-${num}`);
+    const showing = editor.style.display === '';
+    editor.style.display  = showing ? 'none' : '';
+    preview.style.display = showing ? '' : 'none';
+  }
+
+  async function approveReport(num) {
+    const editor = $(`edit-${num}`);
+    const comment = editor.style.display === '' ? editor.value : null;
+    const body = { repo: currentRepo, issue_number: num };
+    if (comment !== null) body.comment = comment;
+
+    try {
+      const res  = await fetch('/api/approve', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+      const data = await res.json();
+      if (data.success) {
+        logLine(`✅ Approved & posted comment on #${num}`, 'll-ok');
+        const card = $(`ac-${num}`);
+        if (card) card.remove();
+        $('pendingCount').textContent = parseInt($('pendingCount').textContent) - 1;
+      } else {
+        logLine(`❌ Approve failed: ${data.error}`, 'll-err');
+      }
+    } catch (e) {
+      logLine(`❌ ${e.message}`, 'll-err');
+    }
+  }
+
+  async function rejectReport(num) {
+    try {
+      const res  = await fetch('/api/reject', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({repo: currentRepo, issue_number: num})});
+      const data = await res.json();
+      if (data.success) {
+        logLine(`🗑️ Report for #${num} discarded.`, 'll-muted');
+        const card = $(`ac-${num}`);
+        if (card) card.remove();
+        $('pendingCount').textContent = parseInt($('pendingCount').textContent) - 1;
+      }
+    } catch (e) {
+      logLine(`❌ ${e.message}`, 'll-err');
+    }
+  }
+
+  /* ── Auto-load on page open ────────────────────────────────────── */
+  fetchIssues();
+</script>
+</body>
+</html>

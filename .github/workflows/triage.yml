@@ -1,0 +1,85 @@
+name: Issue Triage Agent
+
+on:
+  # Fires the moment a new issue is opened.
+  issues:
+    types: [opened]
+
+  # Also runs hourly to catch any issues that slipped through
+  # (e.g. created while Actions was down, or token was unavailable).
+  schedule:
+    - cron: '0 * * * *'
+
+  # Allow triggering manually from the Actions tab.
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Specific issue number to triage (leave blank for all unlabelled)'
+        required: false
+        type: number
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+
+    permissions:
+      issues: write   # post comments + apply labels
+      contents: read  # checkout
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # -----------------------------------------------------------------------
+      # Triggered by a new issue event — triage just that one issue.
+      # -----------------------------------------------------------------------
+      - name: Triage new issue
+        if: github.event_name == 'issues'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python main.py \
+            --repo "${{ github.repository }}" \
+            --issue "${{ github.event.issue.number }}"
+
+      # -----------------------------------------------------------------------
+      # Scheduled run — triage all unlabelled issues in parallel (3 workers).
+      # -----------------------------------------------------------------------
+      - name: Triage all unlabelled issues
+        if: github.event_name == 'schedule'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          python main.py \
+            --repo "${{ github.repository }}" \
+            --workers 3
+
+      # -----------------------------------------------------------------------
+      # Manual trigger — respects optional issue_number input.
+      # -----------------------------------------------------------------------
+      - name: Triage (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "${{ inputs.issue_number }}" ]; then
+            python main.py \
+              --repo "${{ github.repository }}" \
+              --issue "${{ inputs.issue_number }}"
+          else
+            python main.py \
+              --repo "${{ github.repository }}" \
+              --workers 3
+          fi
